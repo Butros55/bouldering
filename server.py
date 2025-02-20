@@ -1,4 +1,5 @@
-from flask import Flask, request, send_file
+import base64
+from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 import cv2
 import numpy as np
@@ -6,28 +7,19 @@ import io
 from PIL import Image
 
 app = Flask(__name__)
-CORS(app)  # Erlaubt Cross-Origin-Anfragen, wichtig für Flutter Web
+CORS(app)
 
-# HSV-Farbbereiche für die Boulderfarben
-# Diese Werte sind NUR ein Startpunkt und müssen je nach Beleuchtung & Griff-Farbton angepasst werden!
+# HSV-Farbranges für Boulderfarben (Anpassung je nach Lichtverhältnissen nötig)
 COLOR_RANGES = {
-    # Gelb
     "gelb":   [(20,  100, 100), (30, 255, 255)],
-    # Türkis
     "tuerkis":[(80,  100, 100), (95, 255, 255)],
-    # Lila (Violett)
     "lila":   [(140, 100, 100), (160, 255, 255)],
-    # Weiß (sehr schwierig in HSV, da S und V hoch sind, muss man experimentieren)
-    "weiss":  [(0,   0,   200), (180, 50,  255)],
-    # Rot: zwei Bereiche (wegen Hue-Übergang bei 180)
     "rot1":   [(0,   120, 70),  (10, 255, 255)],
     "rot2":   [(170, 120, 70),  (180, 255, 255)],
-    # Blau
     "blau":   [(100, 100, 70),  (130, 255, 255)],
-    # Orange
     "orange": [(10,  100, 100), (20, 255, 255)],
-    # Optional: Schwarz => hier ignorieren wir es
-    # Schwarz hätte evtl. (H: 0..180, S: 0..50, V: 0..50), aber wir fügen es NICHT zum output hinzu.
+    "weiss":  [(0,   0,   220), (180, 40,  255)]
+    # Schwarz/Volaumen lassen wir bewusst aus.
 }
 
 @app.route('/process', methods=['POST'])
@@ -36,41 +28,63 @@ def process_image():
     in_memory_file = io.BytesIO(file.read())
     img = np.array(Image.open(in_memory_file))
 
-    # Bei Bedarf von RGB zu BGR konvertieren (wenn PIL in RGB liest)
+    # Konvertiere falls nötig (PIL liest meist in RGB)
     if img.shape[2] == 3:
         img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
 
-    # In HSV umwandeln
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-
-    # Output-Bild: Anfangs komplett schwarz, gleiche Größe wie Original
     output = np.zeros_like(img)
+    all_grips = {}
 
     for color_name, (lower_vals, upper_vals) in COLOR_RANGES.items():
-        lower = np.array(lower_vals, dtype=np.uint8)
-        upper = np.array(upper_vals, dtype=np.uint8)
-
-        mask = cv2.inRange(hsv, lower, upper)
-
-        # Für Rot kombinieren wir rot1 und rot2
-        # => Man kann es im Dictionary splitten (wie oben),
-        #    oder hier direkt zusammenfassen, falls man mag.
         if color_name == "rot1":
-            # rot2 dazuholen
+            lower_rot1 = np.array(COLOR_RANGES["rot1"][0], dtype=np.uint8)
+            upper_rot1 = np.array(COLOR_RANGES["rot1"][1], dtype=np.uint8)
+            mask1 = cv2.inRange(hsv, lower_rot1, upper_rot1)
             lower_rot2 = np.array(COLOR_RANGES["rot2"][0], dtype=np.uint8)
             upper_rot2 = np.array(COLOR_RANGES["rot2"][1], dtype=np.uint8)
             mask2 = cv2.inRange(hsv, lower_rot2, upper_rot2)
-            mask = mask | mask2
+            mask = mask1 | mask2
+        elif color_name == "rot2":
+            continue  # wird bereits in rot1 verarbeitet
+        else:
+            lower = np.array(lower_vals, dtype=np.uint8)
+            upper = np.array(upper_vals, dtype=np.uint8)
+            mask = cv2.inRange(hsv, lower, upper)
 
-        # Bitwise-AND, um nur die gefilterte Farbe aus dem Originalbild zu übernehmen
+        # Morphologische Operationen zur Rauschreduzierung
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+        mask = cv2.erode(mask, kernel, iterations=1)
+        mask = cv2.dilate(mask, kernel, iterations=2)
+
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        grips_for_color = []
+        for cnt in contours:
+            area = cv2.contourArea(cnt)
+            if area < 50:
+                continue
+            x, y, w, h = cv2.boundingRect(cnt)
+            cx = x + w // 2
+            cy = y + h // 2
+            grips_for_color.append({"x": int(x), "y": int(y), "w": int(w), "h": int(h), "cx": int(cx), "cy": int(cy)})
+
+        if grips_for_color:
+            all_grips[color_name] = grips_for_color
+
+        # Zeichne die gefilterte Farbe ins Output-Bild
         color_segment = cv2.bitwise_and(img, img, mask=mask)
-
-        # Im output-Bild hinzufügen (Pixelweise addieren)
         output = cv2.add(output, color_segment)
 
-    # Ausgabe als JPEG
+    # Konvertiere das Output-Bild in base64
     _, buffer = cv2.imencode('.jpg', output)
-    return send_file(io.BytesIO(buffer.tobytes()), mimetype='image/jpeg')
+    img_base64 = base64.b64encode(buffer).decode('utf-8')
+
+    # Sende ein JSON mit beiden Daten: dem Bild und den Griff-Positionen
+    return jsonify({
+        "processed_image": img_base64,
+        "grip_data": all_grips
+    })
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)

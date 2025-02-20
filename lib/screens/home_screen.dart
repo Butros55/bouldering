@@ -32,7 +32,7 @@ class HomeScreenState extends State<HomeScreen> {
           File imageFile = File(picture.path);
           final processed = await ImageProcessor.processImage(imageFile);
           if (!mounted) return;
-          Navigator.pushNamed(context, '/result', arguments: processed.path);
+          Navigator.pushNamed(context, '/result', arguments: processed);
         }
       }
     } catch (e) {
@@ -56,7 +56,7 @@ class HomeScreenState extends State<HomeScreen> {
           File imageFile = File(pickedFile.path);
           final processed = await ImageProcessor.processImage(imageFile);
           if (!mounted) return;
-          Navigator.pushNamed(context, '/result', arguments: processed.path);
+          Navigator.pushNamed(context, '/result', arguments: processed);
         }
       }
     } catch (e) {

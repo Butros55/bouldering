@@ -19,10 +19,10 @@ class MyApp extends StatelessWidget {
       routes: {
         '/': (context) => const HomeScreen(),
         '/result': (context) {
-          // Hier nicht als String erzwingen, sondern als dynamisch annehmen.
-          final dynamic processedImage =
-              ModalRoute.of(context)!.settings.arguments;
-          return ResultScreen(processedImage: processedImage);
+          final Map<String, dynamic> result =
+              ModalRoute.of(context)!.settings.arguments
+                  as Map<String, dynamic>;
+          return ResultScreen(processedResult: result);
         },
       },
     );
