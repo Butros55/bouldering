@@ -1,5 +1,5 @@
 import base64
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify
 from flask_cors import CORS
 import cv2
 import numpy as np
@@ -9,7 +9,7 @@ from PIL import Image
 app = Flask(__name__)
 CORS(app)
 
-# HSV-Farbranges für Boulderfarben (Anpassung je nach Lichtverhältnissen nötig)
+# HSV-Farbranges für Boulderfarben – passe diese an deine Halle an.
 COLOR_RANGES = {
     "gelb":   [(20,  100, 100), (30, 255, 255)],
     "tuerkis":[(80,  100, 100), (95, 255, 255)],
@@ -19,7 +19,7 @@ COLOR_RANGES = {
     "blau":   [(100, 100, 70),  (130, 255, 255)],
     "orange": [(10,  100, 100), (20, 255, 255)],
     "weiss":  [(0,   0,   220), (180, 40,  255)]
-    # Schwarz/Volaumen lassen wir bewusst aus.
+    # Schwarz/Volumen ignorieren wir hier.
 }
 
 @app.route('/process', methods=['POST'])
@@ -31,6 +31,10 @@ def process_image():
     # Konvertiere falls nötig (PIL liest meist in RGB)
     if img.shape[2] == 3:
         img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+
+    # Encode das Originalbild als base64
+    _, orig_buffer = cv2.imencode('.jpg', img)
+    orig_base64 = base64.b64encode(orig_buffer).decode('utf-8')
 
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
     output = np.zeros_like(img)
@@ -46,7 +50,7 @@ def process_image():
             mask2 = cv2.inRange(hsv, lower_rot2, upper_rot2)
             mask = mask1 | mask2
         elif color_name == "rot2":
-            continue  # wird bereits in rot1 verarbeitet
+            continue
         else:
             lower = np.array(lower_vals, dtype=np.uint8)
             upper = np.array(upper_vals, dtype=np.uint8)
@@ -58,7 +62,6 @@ def process_image():
         mask = cv2.dilate(mask, kernel, iterations=2)
 
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
         grips_for_color = []
         for cnt in contours:
             area = cv2.contourArea(cnt)
@@ -67,22 +70,26 @@ def process_image():
             x, y, w, h = cv2.boundingRect(cnt)
             cx = x + w // 2
             cy = y + h // 2
-            grips_for_color.append({"x": int(x), "y": int(y), "w": int(w), "h": int(h), "cx": int(cx), "cy": int(cy)})
-
+            grips_for_color.append({
+                "x": int(x), "y": int(y),
+                "w": int(w), "h": int(h),
+                "cx": int(cx), "cy": int(cy)
+            })
         if grips_for_color:
             all_grips[color_name] = grips_for_color
 
-        # Zeichne die gefilterte Farbe ins Output-Bild
+        # Zeichne die gefilterte Farbe in das Output-Bild
         color_segment = cv2.bitwise_and(img, img, mask=mask)
         output = cv2.add(output, color_segment)
 
-    # Konvertiere das Output-Bild in base64
+    # Encode das verarbeitete Bild als base64
     _, buffer = cv2.imencode('.jpg', output)
-    img_base64 = base64.b64encode(buffer).decode('utf-8')
+    proc_base64 = base64.b64encode(buffer).decode('utf-8')
 
-    # Sende ein JSON mit beiden Daten: dem Bild und den Griff-Positionen
+    # Sende beide Bilder und die Griff-Daten zurück
     return jsonify({
-        "processed_image": img_base64,
+        "original_image": orig_base64,
+        "processed_image": proc_base64,
         "grip_data": all_grips
     })
 

@@ -19,10 +19,12 @@ class MyApp extends StatelessWidget {
       routes: {
         '/': (context) => const HomeScreen(),
         '/result': (context) {
-          final Map<String, dynamic> result =
-              ModalRoute.of(context)!.settings.arguments
-                  as Map<String, dynamic>;
-          return ResultScreen(processedResult: result);
+          final args = ModalRoute.of(context)?.settings.arguments;
+          // Wenn keine Daten übergeben wurden, navigiere zum HomeScreen.
+          if (args == null || args is! Map<String, dynamic>) {
+            return const HomeScreen();
+          }
+          return ResultScreen(processedResult: args);
         },
       },
     );

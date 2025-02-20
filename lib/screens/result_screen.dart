@@ -1,41 +1,91 @@
 import 'dart:convert';
 import 'dart:typed_data';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 class ResultScreen extends StatelessWidget {
-  // Erwartet ein Map, das "processed_image" und "grip_data" enthält.
-  final Map<String, dynamic> processedResult;
+  final Map<String, dynamic>? processedResult;
 
-  const ResultScreen({Key? key, required this.processedResult})
-    : super(key: key);
+  const ResultScreen({super.key, required this.processedResult});
 
   @override
   Widget build(BuildContext context) {
-    // Extrahiere und dekodiere das Bild
-    String base64Image = processedResult["processed_image"] as String;
-    Uint8List imageBytes = base64Decode(base64Image);
+    if (processedResult == null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Verarbeitetes Bild')),
+        body: const Center(child: Text('Keine Daten erhalten.')),
+      );
+    }
 
-    // Konvertiere die Grip-Daten in einen schön formatierten JSON-String
+    Uint8List origBytes;
+    Uint8List procBytes;
+    try {
+      final String origBase64 = processedResult!["original_image"] as String;
+      final String procBase64 = processedResult!["processed_image"] as String;
+      origBytes = base64Decode(origBase64);
+      procBytes = base64Decode(procBase64);
+    } catch (e) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Verarbeitetes Bild')),
+        body: const Center(child: Text('Fehler beim Dekodieren der Bilder.')),
+      );
+    }
+
     String jsonString = const JsonEncoder.withIndent(
       '  ',
-    ).convert(processedResult["grip_data"]);
+    ).convert(processedResult!["grip_data"]);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Verarbeitetes Bild')),
       body: SingleChildScrollView(
-        child: Column(
-          children: [
-            Image.memory(imageBytes),
-            const SizedBox(height: 20),
-            Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: Text(
-                jsonString,
-                style: const TextStyle(fontFamily: 'monospace'),
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 650,
+                    height: 650,
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey, width: 2),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Image.memory(origBytes, fit: BoxFit.contain),
+                  ),
+                  const SizedBox(width: 16),
+                  Container(
+                    width: 650,
+                    height: 650,
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey, width: 2),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Image.memory(procBytes, fit: BoxFit.contain),
+                  ),
+                ],
               ),
-            ),
-          ],
+              const SizedBox(height: 20),
+              Text(
+                'Erkannte Griff-Daten:',
+                style: Theme.of(context).textTheme.headlineSmall,
+              ),
+              const SizedBox(height: 10),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12.0),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade200,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  jsonString,
+                  style: const TextStyle(fontFamily: 'monospace', fontSize: 14),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
