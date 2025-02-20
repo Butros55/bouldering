@@ -8,7 +8,6 @@ void main() {
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
-
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -20,10 +19,12 @@ class MyApp extends StatelessWidget {
       routes: {
         '/': (context) => const HomeScreen(),
         '/result': (context) {
-          // Erwartet einen String als Argument: den Bildpfad
-          final imagePath = ModalRoute.of(context)!.settings.arguments as String;
-          return ResultScreen(imagePath: imagePath);
-        },      },
+          // Hier nicht als String erzwingen, sondern als dynamisch annehmen.
+          final dynamic processedImage =
+              ModalRoute.of(context)!.settings.arguments;
+          return ResultScreen(processedImage: processedImage);
+        },
+      },
     );
   }
 }

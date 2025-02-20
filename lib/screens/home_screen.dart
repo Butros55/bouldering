@@ -1,5 +1,8 @@
-import 'package:camera/camera.dart';
+import 'dart:io';
+import 'package:boulder_ai/image_processor/image_processor.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -9,60 +12,78 @@ class HomeScreen extends StatefulWidget {
 }
 
 class HomeScreenState extends State<HomeScreen> {
-  CameraController? _controller;
-  List<CameraDescription>? cameras;
-  bool _isCameraInitialized = false;
+  final ImagePicker _picker = ImagePicker();
 
-  @override
-  void initState() {
-    super.initState();
-    _initCamera();
-  }
-
-  Future<void> _initCamera() async {
-    cameras = await availableCameras();
-    _controller = CameraController(cameras![0], ResolutionPreset.medium);
-    await _controller!.initialize();
-    setState(() {
-      _isCameraInitialized = true;
-    });
-  }
-
-  @override
-  void dispose() {
-    _controller?.dispose();
-    super.dispose();
-  }
-
+  // Option 1: Foto aufnehmen (Kamera)
   Future<void> _takePicture() async {
-    if (!_controller!.value.isTakingPicture) {
-      final XFile picture = await _controller!.takePicture();
-      Navigator.pushNamed(context, '/result', arguments: picture.path);
+    try {
+      final XFile? picture = await _picker.pickImage(
+        source: ImageSource.camera,
+      );
+      if (picture != null) {
+        if (kIsWeb) {
+          // Auf Web: Nutze Bildbytes
+          Uint8List imageBytes = await picture.readAsBytes();
+          final processed = await ImageProcessor.processImage(imageBytes);
+          if (!mounted) return;
+          Navigator.pushNamed(context, '/result', arguments: processed);
+        } else {
+          // Auf Mobile: Nutze File
+          File imageFile = File(picture.path);
+          final processed = await ImageProcessor.processImage(imageFile);
+          if (!mounted) return;
+          Navigator.pushNamed(context, '/result', arguments: processed.path);
+        }
+      }
+    } catch (e) {
+      debugPrint('Fehler beim Aufnehmen des Fotos: $e');
+    }
+  }
+
+  // Option 2: Bild aus der Galerie auswählen
+  Future<void> _pickImage() async {
+    try {
+      final XFile? pickedFile = await _picker.pickImage(
+        source: ImageSource.gallery,
+      );
+      if (pickedFile != null) {
+        if (kIsWeb) {
+          Uint8List imageBytes = await pickedFile.readAsBytes();
+          final processed = await ImageProcessor.processImage(imageBytes);
+          if (!mounted) return;
+          Navigator.pushNamed(context, '/result', arguments: processed);
+        } else {
+          File imageFile = File(pickedFile.path);
+          final processed = await ImageProcessor.processImage(imageFile);
+          if (!mounted) return;
+          Navigator.pushNamed(context, '/result', arguments: processed.path);
+        }
+      }
+    } catch (e) {
+      debugPrint('Fehler beim Auswählen eines Bildes: $e');
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Boulder AI')),
-      body: _isCameraInitialized
-          ? Stack(
-              children: [
-                CameraPreview(_controller!),
-                Positioned(
-                  bottom: 20,
-                  left: 0,
-                  right: 0,
-                  child: Center(
-                    child: ElevatedButton(
-                      onPressed: _takePicture,
-                      child: Text('Foto aufnehmen'),
-                    ),
-                  ),
-                ),
-              ],
-            )
-          : Center(child: CircularProgressIndicator()),
+      appBar: AppBar(title: const Text('Boulder AI')),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            ElevatedButton(
+              onPressed: _takePicture,
+              child: const Text('Foto aufnehmen'),
+            ),
+            const SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: _pickImage,
+              child: const Text('Bild hochladen'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
